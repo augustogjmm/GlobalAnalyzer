@@ -325,7 +325,7 @@ footer{
 <section class="tbl"><h2 class="bull">Entradas Long</h2><table><thead><tr><th>Nivel</th><th>USD</th><th>ARS ref.</th><th>% tramo</th><th>Zona USD</th><th>Vela origen</th><th>Validación +5</th><th>Estado</th></tr></thead><tbody id="bullRows"></tbody></table></section>
 <section class="tbl"><h2 style="color:#ffb829">Take Profit</h2><table><thead><tr><th>Nivel</th><th>USD</th><th>ARS ref.</th><th>% tramo</th><th>Zona USD</th><th>Vela origen</th><th>Validación +5</th><th>Estado</th></tr></thead><tbody id="bearRows"></tbody></table></section>
 </div>
-<footer>Global Analyzer v1.0.0 · USD + CCL · Interactive</footer>
+<footer>Global Analyzer v1.0.1 · USD + CCL · Interactive</footer>
 </main><script>
 (function(){
 "use strict";
@@ -354,13 +354,31 @@ function updateMeta(j){
  E.arsNow.textContent=j.arsTheoretical?fmtArs(j.arsTheoretical):"—";
  E.source.textContent="Yahoo Finance · "+j.underlying+" · "+E.tf.options[E.tf.selectedIndex].text+" · CCL "+(S.ccl&&S.ccl.ref?fmtArs(S.ccl.ref):"N/D")
 }
+function validCandle(c){
+ if(!c)return false;
+ var o=Number(c.open),h=Number(c.high),l=Number(c.low),cl=Number(c.close);
+ return [o,h,l,cl].every(function(v){return isFinite(v)&&v>0}) &&
+   h>=Math.max(o,cl,l) && l<=Math.min(o,cl,h)
+}
+function periodKey(ms,tf){
+ var d=new Date(Number(ms));
+ if(tf==="1w"){
+  var day=d.getUTCDay()||7;
+  d.setUTCDate(d.getUTCDate()-day+1);
+  return d.toISOString().slice(0,10)
+ }
+ return d.toISOString().slice(0,10)
+}
+function cleanCandles(candles){
+ var map=new Map();
+ (candles||[]).forEach(function(c){if(validCandle(c))map.set(periodKey(c.time,E.tf.value),c)});
+ return Array.from(map.values()).sort(function(a,b){return a.time-b.time})
+}
 function mergeCompact(candles){
- (candles||[]).forEach(function(c){
-  var found=false;
-  for(var i=S.candles.length-1;i>=0&&i>S.candles.length-10;i--){if(S.candles[i].time===c.time){S.candles[i]=c;found=true;break}}
-  if(!found)S.candles.push(c)
- });
- S.candles.sort(function(a,b){return a.time-b.time})
+ var incoming=cleanCandles(candles),map=new Map();
+ S.candles.filter(validCandle).forEach(function(c){map.set(periodKey(c.time,E.tf.value),c)});
+ incoming.forEach(function(c){map.set(periodKey(c.time,E.tf.value),c)});
+ S.candles=Array.from(map.values()).sort(function(a,b){return a.time-b.time})
 }
 function max(a,s,e,k){var v=-Infinity;for(var i=s;i<=e;i++)if(a[i][k]>v)v=a[i][k];return v}
 function min(a,s,e,k){var v=Infinity;for(var i=s;i<=e;i++)if(a[i][k]<v)v=a[i][k];return v}
@@ -393,7 +411,9 @@ function age(ms){
  return Math.max(1,mins)+" min"
 }
 function tables(){
- var current=S.candles.length?S.candles[S.candles.length-1].close:null;
+ var lastClose=S.candles.length?Number(S.candles[S.candles.length-1].close):null;
+ var metaPrice=S.meta?Number(S.meta.price):null;
+ var current=isFinite(lastClose)&&lastClose>0?lastClose:(isFinite(metaPrice)&&metaPrice>0?metaPrice:null);
  function rows(a,kind){
   var selected=a.slice();
   if(isFinite(current)){
@@ -405,9 +425,9 @@ function tables(){
   if(!selected.length)return '<tr><td colspan="8" class="muted">'+(kind==="long"?"Sin entradas Long activas":"Sin objetivos TP activos")+'</td></tr>';
   var base=current;
   return selected.map(function(o,i){
-   var pct=isFinite(base)&&base!==0?(o.avg/base-1)*100:null;
+   var pct=isFinite(base)&&base>0&&isFinite(o.avg)&&o.avg>0?(o.avg/base-1)*100:null;
    var delta=pct===null?"—":((pct>=0?"↑ ":"↓ ")+Math.abs(pct).toFixed(2)+"%");
-   var from=i===0?"desde precio":"desde "+(kind==="long"?"Long ":"TP ")+i;
+   var from=i===0?"desde precio actual":"desde "+(kind==="long"?"Long ":"TP ")+i;
    var label=(kind==="long"?"Long ":"TP ")+(i+1),ars=toArs(o.avg);
    base=o.avg;
    return '<tr>'+
@@ -472,7 +492,7 @@ async function load(){
  stopLive();S.panBars=0;S.priceScale=1;S.priceShift=0;
  if(S.abort)S.abort.abort();S.abort=new AbortController();E.load.disabled=true;stat("Analizando "+sym+"…","load");busy(true,"Descargando mercado USD, ratio CEDEAR y CCL…");
  try{
-  var j=await market(sym,tf,false,S.abort.signal);S.precision=calcPrecision(j.price);S.candles=j.candles||[];updateMeta(j);
+  var j=await market(sym,tf,false,S.abort.signal);S.precision=calcPrecision(j.price);S.candles=cleanCandles(j.candles||[]);updateMeta(j);
   blocks(S.candles);indicators();tables();E.progress.textContent=S.candles.length.toLocaleString("es-AR")+" velas";
   stat("Datos cargados · seguimiento activo","load");draw();startLive(sym,tf)
  }catch(e){
