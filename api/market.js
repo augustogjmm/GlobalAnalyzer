@@ -103,8 +103,12 @@ async function yahooChart(symbol,interval,compact){
   const t=r.timestamp||[],q=r.indicators&&r.indicators.quote&&r.indicators.quote[0]||{};
   const candles=[];
   for(let i=0;i<t.length;i++){
-    const o=Number(q.open&&q.open[i]),h=Number(q.high&&q.high[i]),l=Number(q.low&&q.low[i]),c=Number(q.close&&q.close[i]),v=Number(q.volume&&q.volume[i]);
-    if([o,h,l,c].every(Number.isFinite))candles.push({time:t[i]*1000,open:o,high:h,low:l,close:c,volume:Number.isFinite(v)?v:0});
+    const ro=q.open&&q.open[i],rh=q.high&&q.high[i],rl=q.low&&q.low[i],rc=q.close&&q.close[i],rv=q.volume&&q.volume[i];
+    if(ro==null||rh==null||rl==null||rc==null)continue;
+    const o=Number(ro),h=Number(rh),l=Number(rl),c=Number(rc),v=Number(rv);
+    const valid=[o,h,l,c].every(x=>Number.isFinite(x)&&x>0) &&
+      h>=Math.max(o,c,l) && l<=Math.min(o,c,h);
+    if(valid)candles.push({time:t[i]*1000,open:o,high:h,low:l,close:c,volume:Number.isFinite(v)&&v>=0?v:0});
   }
   if(!candles.length)throw new Error("Sin velas válidas para "+symbol);
   return {candles,meta:r.meta||{}};
