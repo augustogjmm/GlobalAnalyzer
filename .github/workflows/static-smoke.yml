@@ -1,0 +1,27 @@
+name: GlobalAnalyzer static smoke
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  static-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate API syntax
+        run: node --check api/market.js
+      - name: Validate HTML shell exists
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s = Path('index.html').read_text(encoding='utf-8').lower()
+          assert '<html' in s and '<head' in s and '</html>' in s
+          print('HTML structure present')
+          PY
+      # These static checks do not prove that external data APIs are available.
